@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DefaultFrom</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Segoe UI", sans-serif; font-size: 13px; background: #f3f2f1; color: #323130; padding: 16px; }
+    h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; color: #0078d4; }
+    .subtitle { font-size: 11px; color: #605e5c; margin-bottom: 16px; }
+    .card { background: #fff; border: 1px solid #edebe9; border-radius: 4px; padding: 14px; margin-bottom: 12px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    input[type="text"], input[type="email"] { width: 100%; padding: 6px 8px; border: 1px solid #c8c6c4; border-radius: 3px; font-size: 13px; margin-bottom: 8px; }
+    input:focus { outline: none; border-color: #0078d4; }
+    .user-chip { display: inline-flex; align-items: center; background: #deecf9; color: #004578; border-radius: 12px; padding: 3px 10px; margin: 3px 3px 3px 0; font-size: 12px; }
+    .user-chip button { background: none; border: none; color: #004578; cursor: pointer; margin-left: 6px; font-size: 14px; line-height: 1; padding: 0; }
+    .add-row { display: flex; gap: 6px; margin-top: 8px; }
+    .add-row input { margin: 0; flex: 1; }
+    .btn { padding: 6px 14px; border: none; border-radius: 3px; cursor: pointer; font-size: 13px; font-weight: 600; }
+    .btn-primary { background: #0078d4; color: #fff; }
+    .btn-primary:hover { background: #106ebe; }
+    .btn-secondary { background: #f3f2f1; color: #323130; border: 1px solid #c8c6c4; }
+    .btn-secondary:hover { background: #edebe9; }
+    .status { margin-top: 10px; padding: 8px 10px; border-radius: 3px; font-size: 12px; display: none; }
+    .status.ok { background: #dff6dd; color: #107c10; display: block; }
+    .status.err { background: #fde7e9; color: #a4262c; display: block; }
+    .current-info { font-size: 11px; color: #605e5c; margin-top: 6px; padding: 6px 8px; background: #f3f2f1; border-radius: 3px; }
+    .section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #605e5c; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h2>DefaultFrom</h2>
+  <div class="subtitle">Absender wird automatisch bei neuen Mails, Antworten und Weiterleitungen gesetzt.</div>
+
+  <div class="card">
+    <div class="section-title">Shared Mailbox</div>
+    <label for="sharedEmail">E-Mail-Adresse</label>
+    <input type="email" id="sharedEmail" placeholder="shared@tcsag.de" />
+    <label for="sharedDisplay">Anzeigename (optional)</label>
+    <input type="text" id="sharedDisplay" placeholder="TCS Support" />
+    <div class="current-info" id="currentInfo">Kein Konto erkannt</div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Nur für diese User (leer = alle)</div>
+    <div class="subtitle" style="margin-bottom:8px;">UPN / E-Mail-Adresse eintragen</div>
+    <div class="user-list" id="userList"></div>
+    <div class="add-row">
+      <input type="email" id="newUser" placeholder="user@tcsag.de" />
+      <button class="btn btn-secondary" onclick="addUser()">+ Add</button>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" style="width:100%" onclick="saveSettings()">Einstellungen speichern</button>
+  <div class="status" id="status"></div>
+
+  <script>
+    let settings = { sharedEmail: "", sharedDisplay: "", allowedUsers: [] };
+    const STORAGE_KEY = "defaultfrom_settings";
+
+    Office.onReady((info) => {
+      if (info.host === Office.HostType.Outlook) {
+        loadSettings();
+        showCurrentAccount();
+      }
+    });
+
+    function showCurrentAccount() {
+      try {
+        const upn = Office.context.mailbox.userProfile.emailAddress;
+        const name = Office.context.mailbox.userProfile.displayName;
+        document.getElementById("currentInfo").textContent = "Eingeloggt als: " + name + " <" + upn + ">";
+      } catch(e) {}
+    }
+
+    function loadSettings() {
+      try {
+        const raw = Office.context.roamingSettings.get(STORAGE_KEY);
+        if (raw) settings = Object.assign(settings, JSON.parse(raw));
+      } catch(e) {}
+      document.getElementById("sharedEmail").value = settings.sharedEmail || "";
+      document.getElementById("sharedDisplay").value = settings.sharedDisplay || "";
+      renderUserList();
+    }
+
+    function renderUserList() {
+      const list = document.getElementById("userList");
+      list.innerHTML = "";
+      (settings.allowedUsers || []).forEach((u, i) => {
+        const chip = document.createElement("span");
+        chip.className = "user-chip";
+        chip.innerHTML = u + '<button onclick="removeUser(' + i + ')">×</button>';
+        list.appendChild(chip);
+      });
+    }
+
+    function addUser() {
+      const input = document.getElementById("newUser");
+      const val = input.value.trim().toLowerCase();
+      if (!val || !val.includes("@")) return;
+      if (!settings.allowedUsers.includes(val)) { settings.allowedUsers.push(val); renderUserList(); }
+      input.value = "";
+    }
+
+    function removeUser(i) { settings.allowedUsers.splice(i, 1); renderUserList(); }
+
+    function saveSettings() {
+      settings.sharedEmail = document.getElementById("sharedEmail").value.trim();
+      settings.sharedDisplay = document.getElementById("sharedDisplay").value.trim();
+      Office.context.roamingSettings.set(STORAGE_KEY, JSON.stringify(settings));
+      Office.context.roamingSettings.saveAsync((result) => {
+        const el = document.getElementById("status");
+        if (result.status === Office.AsyncResultStatus.Succeeded) {
+          el.className = "status ok";
+          el.textContent = "✓ Gespeichert — ab sofort aktiv für alle neuen Mails, Antworten und Weiterleitungen.";
+        } else {
+          el.className = "status err";
+          el.textContent = "Fehler: " + result.error.message;
+        }
+      });
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("newUser").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") addUser();
+      });
+    });
+  </script>
+</body>
+</html>
